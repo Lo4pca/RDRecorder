@@ -38,10 +38,23 @@ public class ConfigUI : MonoBehaviour
     {
         GUILayout.Space(10);
 
+        // FFmpeg's output framerate and the mocked timeline are both locked in for the
+        // duration of a recording session, and playback re-encodes nothing but still
+        // reads TargetFPS for its own bookkeeping. Changing FPS mid-session would desync
+        // audio/video, so the field is locked whenever we're not Idle.
+        bool isIdle = GameManager.Instance.CurrentState == AppState.Idle;
+
         GUILayout.BeginHorizontal();
         GUILayout.Label("Target FPS:", GUILayout.Width(80));
+        GUI.enabled = isIdle;
         _tempFps = GUILayout.TextField(_tempFps);
+        GUI.enabled = true;
         GUILayout.EndHorizontal();
+
+        if (!isIdle)
+        {
+            GUILayout.Label("FPS is locked while recording or playing back.");
+        }
 
         GUILayout.Space(10);
 
@@ -103,13 +116,25 @@ public class ConfigUI : MonoBehaviour
 
     private void SaveConfig()
     {
-        if (int.TryParse(_tempFps, out int parsedFps) && parsedFps > 0)
+        bool isIdle = GameManager.Instance.CurrentState == AppState.Idle;
+
+        if (isIdle)
         {
-            PluginConfig.TargetFPS.Value = parsedFps;
+            if (int.TryParse(_tempFps, out int parsedFps) && parsedFps > 0)
+            {
+                PluginConfig.TargetFPS.Value = parsedFps;
+            }
+            else
+            {
+                Plugin.LogError($"Invalid FPS: '{_tempFps}', reset to default value.");
+                _tempFps = PluginConfig.TargetFPS.Value.ToString();
+            }
         }
         else
         {
-            Plugin.LogError($"Invalid FPS: '{_tempFps}', reset to default value.");
+            // The field was disabled, but guard here too and revert any edit that
+            // could still have been queued (e.g. from a pasted value) so the UI never
+            // shows a change that was silently dropped.
             _tempFps = PluginConfig.TargetFPS.Value.ToString();
         }
 

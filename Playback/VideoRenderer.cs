@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.Video;
 using RDRecorder.Config;
+using RDRecorder.Core;
 using RDLevelEditor;
 
 namespace RDRecorder.Playback;
@@ -21,6 +22,10 @@ public class VideoRenderer : MonoBehaviour
     private static RawImage _targetGameViewRawImage;
     private static Texture _originalGameViewTexture;
 
+    // Lets callers (PlaybackController) distinguish "enabled and actually playing" from a
+    // silent no-op enable (no recorded video found, or the editor gameView is missing).
+    public static bool IsActive => _playback_mode;
+
     private void OnEnable()
     {
         Plugin.LogInfo("VideoRenderer enabled. Initializing video playback...");
@@ -34,14 +39,16 @@ public class VideoRenderer : MonoBehaviour
 
         scnGame.instance.SetEnabledCameras(false);
         bool isEditorMode = IsEditorScene();
-        if (isEditorMode)
+        bool setupSucceeded = isEditorMode ? SetupEditorVideo(latestVideo) : SetupNormalPlayVideo(latestVideo);
+
+        if (!setupSucceeded)
         {
-            SetupEditorVideo(latestVideo);
+            // Roll back the camera toggle we already applied above since we're bailing
+            // out before actually entering playback mode.
+            scnGame.instance.SetEnabledCameras(true);
+            return;
         }
-        else
-        {
-            SetupNormalPlayVideo(latestVideo);
-        }
+
         _playback_mode=true;
     }
 
@@ -90,7 +97,7 @@ public class VideoRenderer : MonoBehaviour
         return latestFile?.FullName;
     }
 
-    private void SetupNormalPlayVideo(string videoPath)
+    private bool SetupNormalPlayVideo(string videoPath)
     {
         _videoRoot = new GameObject("RDRecorder_VideoUI");
         DontDestroyOnLoad(_videoRoot);
@@ -116,15 +123,16 @@ public class VideoRenderer : MonoBehaviour
         rawImage.texture = _videoTexture;
 
         SetupVideoPlayerComponent(videoPath);
+        return true;
     }
 
-    private void SetupEditorVideo(string videoPath)
+    private bool SetupEditorVideo(string videoPath)
     {
         _targetGameViewRawImage = scnEditor.instance.gameView;
         if (_targetGameViewRawImage == null)
         {
             Plugin.LogError("Editor mode detected, but 'gameView' RawImage could not be found!");
-            return;
+            return false;
         }
 
         // Cache original texture to restore later
@@ -144,6 +152,7 @@ public class VideoRenderer : MonoBehaviour
         DontDestroyOnLoad(_videoRoot);
 
         SetupVideoPlayerComponent(videoPath);
+        return true;
     }
 
     private void SetupVideoPlayerComponent(string videoPath)
@@ -169,12 +178,21 @@ public class VideoRenderer : MonoBehaviour
             }
         }
     }
+    ////Cameras are restored when exiting playback mode, we need to show the rank screen at the end of the level. 
     [HarmonyPatch(typeof(LevelEvent_FinishLevel), nameof(LevelEvent_FinishLevel.Run))]
     public static class LevelEvent_FinishLevel_Run_Patch
     {
         static bool Prefix()
         {
-            if (_playback_mode) ExitPlayback(); //Cameras are restored when exiting playback mode, we need to show the rank screen at the end of the level. 
+            // Route through GameManager instead of calling ExitPlayback() directly, so a
+            // level ending naturally during playback fully unwinds the whole session:
+            // this disables PlaybackController -> disables VideoRenderer (still runs
+            // ExitPlayback() via its own OnDisable) -> restores PlaybackController's
+            // filtered level events -> resets GameManager's state back to Idle.
+            // Previously only the video/camera side was cleaned up here, which left the
+            // filtered (reduced) event list permanently applied to this level instance
+            // and left the UI stuck showing "Stop Playback" after the level ended.
+            if (_playback_mode) GameManager.Instance.StopPlayback();
             return true;
         }
     }

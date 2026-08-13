@@ -30,10 +30,22 @@ public class RecorderController : MonoBehaviour
     {
         Plugin.LogInfo("RecorderController disabled. Restoring original time flow...");
 
-        // 1. Stop capturing
-        if (_capturer != null) Destroy(_capturer);
+        // 1. Stop capturing. Destroy() only marks a component for removal at the end of
+        // the current frame - its OnDisable doesn't run synchronously. Explicitly setting
+        // enabled = false first forces FrameCapturer/FFmpegEncoder to stop and flush
+        // *immediately*, so we don't restore real time below while they're still running
+        // for the rest of this frame on mocked time.
+        if (_capturer != null)
+        {
+            _capturer.enabled = false;
+            Destroy(_capturer);
+        }
         var encoder = GetComponent<FFmpegEncoder>();
-        if (encoder != null) Destroy(encoder);
+        if (encoder != null)
+        {
+            encoder.enabled = false;
+            Destroy(encoder);
+        }
 
         // 2. Restore the rhythm game's audio logic time
         TimeMockManager.StopMocking();
