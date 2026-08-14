@@ -21,9 +21,28 @@ public class RecorderController : MonoBehaviour
         // 2. Hijack the rhythm game's audio logic time
         TimeMockManager.StartMocking();
 
-        // 3. Start capturing frames
-        gameObject.AddComponent<FFmpegEncoder>();
-        _capturer = gameObject.AddComponent<FrameCapturer>();
+        // 3. Start capturing frames. Reuse an existing component instead of unconditionally
+        // AddComponent-ing a new one, in case a previous session's Destroy() call (which is
+        // deferred to end-of-frame) hasn't actually removed the old one yet - mirrors the
+        // TryGetComponent pattern GameManager already uses for its own subsystem controllers.
+        if (gameObject.TryGetComponent<FFmpegEncoder>(out var existingEncoder))
+        {
+            existingEncoder.enabled = true;
+        }
+        else
+        {
+            gameObject.AddComponent<FFmpegEncoder>();
+        }
+
+        if (gameObject.TryGetComponent<FrameCapturer>(out var existingCapturer))
+        {
+            _capturer = existingCapturer;
+            _capturer.enabled = true;
+        }
+        else
+        {
+            _capturer = gameObject.AddComponent<FrameCapturer>();
+        }
     }
 
     private void OnDisable()

@@ -75,6 +75,18 @@ public class VideoRenderer : MonoBehaviour
         {
             Destroy(_videoRoot);
         }
+
+        // Explicitly clear cached references rather than relying on Unity's "destroyed
+        // object compares equal to null" behavior to paper over it. This keeps a stray
+        // call against these fields from silently no-op'ing on a destroyed object
+        // instead of failing loudly, and drops the cached editor texture reference
+        // between sessions instead of holding onto it indefinitely.
+        _videoRoot = null;
+        _videoPlayer = null;
+        _videoTexture = null;
+        _targetGameViewRawImage = null;
+        _originalGameViewTexture = null;
+
         scnGame.instance.SetEnabledCameras(true);
         _playback_mode=false;
     }
@@ -178,7 +190,7 @@ public class VideoRenderer : MonoBehaviour
             }
         }
     }
-    ////Cameras are restored when exiting playback mode, we need to show the rank screen at the end of the level. 
+    //Cameras are restored when exiting playback mode, we need to show the rank screen at the end of the level.
     [HarmonyPatch(typeof(LevelEvent_FinishLevel), nameof(LevelEvent_FinishLevel.Run))]
     public static class LevelEvent_FinishLevel_Run_Patch
     {
