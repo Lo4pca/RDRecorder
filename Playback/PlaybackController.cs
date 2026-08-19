@@ -1,6 +1,7 @@
 using UnityEngine;
 using RDLevelEditor;
 using System.Collections.Generic;
+using RDRecorder.Core;
 
 namespace RDRecorder.Playback;
 
@@ -28,6 +29,17 @@ public class PlaybackController : MonoBehaviour
         // Enable optimization to suppress heavy game rendering and logic
         TogglePlaybackMode(true);
         _videoRenderer.enabled = true;
+
+        // VideoRenderer.OnEnable() runs synchronously above, so by this point it has
+        // either fully started (IsActive == true) or bailed out (no recorded video found,
+        // or the editor gameView couldn't be located). If it bailed, unwind everything we
+        // just did instead of leaving the app stuck in a "PlayingBack" state with nothing
+        // actually playing.
+        if (!VideoRenderer.IsActive)
+        {
+            Plugin.LogWarn("Video renderer failed to start; aborting playback session.");
+            GameManager.Instance.StopPlayback();
+        }
     }
 
     private void OnDisable()
@@ -78,6 +90,9 @@ public class PlaybackController : MonoBehaviour
                 }
             }
             
+            // Clear the cached backup so the *next* playback session captures a fresh
+            // snapshot of whichever level is current at that time.
+            originalEventsBackup = null;
             isPlaybackModeActive = false;
         }
     }

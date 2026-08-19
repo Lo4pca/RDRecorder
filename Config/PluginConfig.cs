@@ -1,3 +1,4 @@
+using System;
 using BepInEx.Configuration;
 using System.IO;
 using UnityEngine;
@@ -34,9 +35,21 @@ public static class PluginConfig
             "Output folder to recorded videos."
         );
 
-        if (!Directory.Exists(OutputFolder.Value))
+        try
         {
+            // Directory.CreateDirectory is already a no-op if the folder exists, so there's
+            // no need to check Directory.Exists first.
             Directory.CreateDirectory(OutputFolder.Value);
+        }
+        catch (Exception ex)
+        {
+            // A bad path saved in the config file (invalid characters, no write permission,
+            // a drive that no longer exists, etc.) would otherwise throw here and take the
+            // whole plugin down during Awake(), before Harmony even patches anything. Fall
+            // back to the default folder so the plugin still loads in a working state.
+            Plugin.LogError($"Could not create output folder '{OutputFolder.Value}': {ex.Message}. Falling back to default: {defaultPath}");
+            OutputFolder.Value = defaultPath;
+            Directory.CreateDirectory(defaultPath);
         }
     }
 }

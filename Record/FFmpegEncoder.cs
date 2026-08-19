@@ -19,6 +19,15 @@ public class FFmpegEncoder : MonoBehaviour
     
     private string _outputPath;
 
+    // Hard cap on how many frames we'll buffer before dropping new ones, expressed as
+    // seconds of buffer so it scales with TargetFPS rather than being a fixed frame
+    // count. Without a cap, a slow disk falling behind for long enough would let this
+    // queue - and the memory it holds - grow without bound until the process crashes.
+    // Dropping frames instead means the recording may end up shorter/skip-y under
+    // sustained I/O pressure, but the plugin (and the game) stay running.
+    private const int MaxQueuedSeconds = 5;
+    private int _droppedFrameCount;
+
     private void Awake()
     {
         Instance = this;
@@ -39,6 +48,7 @@ public class FFmpegEncoder : MonoBehaviour
         }
 
         _isEncoding = true;
+        _droppedFrameCount = 0;
         
         // Start the background consumer thread
         _encoderThread = new Thread(EncoderLoop)
@@ -84,6 +94,17 @@ public class FFmpegEncoder : MonoBehaviour
             }
         }
         
+        if (_droppedFrameCount > 0)
+        {
+            Plugin.LogWarn($"Encoder queue was full at some point during this recording; dropped {_droppedFrameCount} frame(s). The output video may run shorter than the actual level duration.");
+        }
+
+        // Clear the singleton reference now that this instance is fully shut down, so a
+        // FrameCapturer readback that completes after this point sees "no active
+        // encoder" instead of a stale reference to a shut-down instance. Guarded so a
+        // late-running OnDisable can never clobber a newer instance's reference.
+        if (Instance == this) Instance = null;
+
         Plugin.LogInfo("Encoder pipeline stopped successfully.");
     }
 
@@ -91,7 +112,20 @@ public class FFmpegEncoder : MonoBehaviour
     public void EnqueueFrame(byte[] frameData)
     {
         if (!_isEncoding) return;
-        
+
+        int maxQueuedFrames = Mathf.Max(60, PluginConfig.TargetFPS.Value * MaxQueuedSeconds);
+        if (_frameQueue.Count >= maxQueuedFrames)
+        {
+            _droppedFrameCount++;
+            // Only log occasionally while dropping so a sustained I/O stall doesn't itself
+            // become a logging bottleneck.
+            if (_droppedFrameCount == 1 || _droppedFrameCount % 60 == 0)
+            {
+                Plugin.LogError($"Encoder queue is full ({maxQueuedFrames} frames); dropping frames because disk I/O can't keep up. Dropped so far this session: {_droppedFrameCount}.");
+            }
+            return;
+        }
+
         _frameQueue.Enqueue(frameData);
 
         // Warn if the queue is growing too large (I/O is bottlenecking)
@@ -148,7 +182,12 @@ public class FFmpegEncoder : MonoBehaviour
                 catch (Exception ex)
                 {
                     Plugin.LogError($"Pipe write error: {ex.Message}");
-                    _isEncoding = false; // Abort on fatal pipe error
+                    // The pipe is broken - every further write will just throw again. Stop
+                    // the loop outright instead of continuing to drain the rest of the
+                    // queue against a dead pipe, which would otherwise log one error per
+                    // remaining frame still sitting in the queue.
+                    _isEncoding = false;
+                    break;
                 }
             }
             else
