@@ -26,6 +26,15 @@ public class ConfigUI : MonoBehaviour
                 RefreshTempVars();
             }
         }
+        if (Input.GetKeyDown(PluginConfig.RecordHotkey.Value))
+        {
+            ToggleRecording();
+        }
+
+        if (Input.GetKeyDown(PluginConfig.PlaybackHotkey.Value))
+        {
+            TogglePlayback();
+        }
     }
 
     private void OnGUI()
@@ -78,14 +87,7 @@ public class ConfigUI : MonoBehaviour
         
         if (GUILayout.Button(recBtnText, GUILayout.Height(40)))
         {
-            if (isRecording)
-            {
-                GameManager.Instance.StopRecording();
-            }
-            else
-            {
-                GameManager.Instance.StartRecording();
-            }
+            ToggleRecording();
         }
         
         // Playback Button Logic
@@ -94,18 +96,36 @@ public class ConfigUI : MonoBehaviour
         
         if (GUILayout.Button(playBtnText, GUILayout.Height(40)))
         {
-            if (isPlaying)
-            {
-                GameManager.Instance.StopPlayback();
-            }
-            else
-            {
-                GameManager.Instance.StartPlayback();
-            }
+            TogglePlayback();
         }
         
         GUILayout.EndHorizontal();
         GUI.DragWindow();
+    }
+    private void ToggleRecording()
+    {
+        _isWindowVisible = false;
+        if (GameManager.Instance.CurrentState == AppState.Recording)
+        {
+            GameManager.Instance.StopRecording();
+        }
+        else
+        {
+            GameManager.Instance.StartRecording();
+        }
+    }
+
+    private void TogglePlayback()
+    {
+        _isWindowVisible = false;
+        if (GameManager.Instance.CurrentState == AppState.PlayingBack)
+        {
+            GameManager.Instance.StopPlayback();
+        }
+        else
+        {
+            GameManager.Instance.StartPlayback();
+        }
     }
 
     private void RefreshTempVars()
