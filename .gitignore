@@ -1,6 +1,5 @@
 .DS_Store
-dependencies.md
-layout.txt
+*.txt
 lib
 obj
 bin

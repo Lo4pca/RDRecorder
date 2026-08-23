@@ -11,6 +11,8 @@ public class RecorderController : MonoBehaviour
 {
     private static FrameCapturer _capturer;
     private static int _originalCaptureFramerate;
+    static bool _has_started; //In case there are multiple PlaySong events
+    static bool _has_ended;
     private void OnEnable()
     {
         Plugin.LogInfo("RecorderController enabled. Initializing capture pipeline...");
@@ -36,6 +38,8 @@ public class RecorderController : MonoBehaviour
         {
             _capturer = gameObject.AddComponent<FrameCapturer>();
         }
+        _has_started=false;
+        _has_ended=false;
     }
     public static void BeginRecording()
     {
@@ -94,7 +98,11 @@ public class RecorderController : MonoBehaviour
     {
         static void Postfix()
         {
-            if(GameManager.Instance.CurrentState==AppState.Recording) BeginRecording();
+            if (!_has_started&&GameManager.Instance.CurrentState==AppState.Recording)
+            {
+                BeginRecording();
+                _has_started=true;
+            }
         }
     }
     [HarmonyPatch(typeof(LevelEvent_FinishLevel), nameof(LevelEvent_FinishLevel.Run))]
@@ -102,7 +110,11 @@ public class RecorderController : MonoBehaviour
     {
         static bool Prefix()
         {
-            if(GameManager.Instance.CurrentState==AppState.Recording) GameManager.Instance.StopRecording();
+            if (!_has_ended&&GameManager.Instance.CurrentState==AppState.Recording)
+            {
+                GameManager.Instance.StopRecording();
+                _has_ended=true;
+            }
             return true;
         }
     }

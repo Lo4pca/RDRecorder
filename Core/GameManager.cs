@@ -19,6 +19,7 @@ public class GameManager : MonoBehaviour
 
     // Read-only state property
     public AppState CurrentState { get; private set; } = AppState.Idle;
+    public string TargetVideoPath;
 
     // References to our subsystem controllers
     private RecorderController _recorderController;

@@ -1,11 +1,9 @@
 using HarmonyLib;
 using System.IO;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.Video;
-using RDRecorder.Config;
 using RDRecorder.Core;
 using RDLevelEditor;
 
@@ -17,6 +15,7 @@ public class VideoRenderer : MonoBehaviour
     private static VideoPlayer _videoPlayer;
     private static RenderTexture _videoTexture;
     private static bool _playback_mode=false;
+    private static bool _has_started;
 
     // Editor-specific tracking fields to restore original state on disable
     private static RawImage _targetGameViewRawImage;
@@ -29,17 +28,16 @@ public class VideoRenderer : MonoBehaviour
     private void OnEnable()
     {
         Plugin.LogInfo("VideoRenderer enabled. Initializing video playback...");
-        
-        string latestVideo = GetLatestRecordedVideo();
-        if (string.IsNullOrEmpty(latestVideo))
+        string video=GameManager.Instance.TargetVideoPath;
+        if (string.IsNullOrEmpty(video) || !File.Exists(video))
         {
-            Plugin.LogError("No recorded video found in the output folder. Cannot start playback.");
+            Plugin.LogError($"Invalid or missing video file path: {video}. Cannot start playback.");
             return;
         }
 
         scnGame.instance.SetEnabledCameras(false);
         bool isEditorMode = IsEditorScene();
-        bool setupSucceeded = isEditorMode ? SetupEditorVideo(latestVideo) : SetupNormalPlayVideo(latestVideo);
+        bool setupSucceeded = isEditorMode ? SetupEditorVideo(video) : SetupNormalPlayVideo(video);
 
         if (!setupSucceeded)
         {
@@ -50,11 +48,11 @@ public class VideoRenderer : MonoBehaviour
         }
 
         _playback_mode=true;
+        _has_started=false;
     }
 
     private void OnDisable()
     {
-        if(!_playback_mode) return;
         Plugin.LogInfo("VideoRenderer disabled. Cleaning up video playback...");
         ExitPlayback();
     }
@@ -94,19 +92,6 @@ public class VideoRenderer : MonoBehaviour
     private bool IsEditorScene()
     {
         return SceneManager.GetActiveScene().name == "scnEditor" || scnEditor.instance != null;
-    }
-
-    private string GetLatestRecordedVideo()
-    {
-        string folder = PluginConfig.OutputFolder.Value;
-        if (!Directory.Exists(folder)) return null;
-
-        var directory = new DirectoryInfo(folder);
-        var latestFile = directory.GetFiles("*.mp4")
-                                  .OrderByDescending(f => f.CreationTime)
-                                  .FirstOrDefault();
-
-        return latestFile?.FullName;
     }
 
     private bool SetupNormalPlayVideo(string videoPath)
@@ -178,12 +163,12 @@ public class VideoRenderer : MonoBehaviour
         _videoPlayer.audioOutputMode = VideoAudioOutputMode.None; // Game handles native audio sync
     }
 
-    [HarmonyPatch(typeof(LevelEvent_PlaySong), nameof(LevelEvent_PlaySong.Run))] //This event is always at the beginning of every level, and there is only one.
+    [HarmonyPatch(typeof(LevelEvent_PlaySong), nameof(LevelEvent_PlaySong.Run))]
     public static class LevelEvent_PlaySong_Run_Patch
     {
         static void Postfix()
         {
-            if (_playback_mode)
+            if (!_has_started&&_playback_mode)
             {
                 _videoPlayer.Play();
                 Plugin.LogInfo($"Started playing video: {_videoPlayer.url}");
