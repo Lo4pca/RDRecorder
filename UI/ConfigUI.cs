@@ -1,6 +1,8 @@
 using UnityEngine;
+using UnityFileDialog;
 using RDRecorder.Config;
 using RDRecorder.Core;
+using System.Collections;
 
 namespace RDRecorder.UI;
 
@@ -25,6 +27,15 @@ public class ConfigUI : MonoBehaviour
             {
                 RefreshTempVars();
             }
+        }
+        if (Input.GetKeyDown(PluginConfig.RecordHotkey.Value))
+        {
+            ToggleRecording();
+        }
+
+        if (Input.GetKeyDown(PluginConfig.PlaybackHotkey.Value))
+        {
+            TogglePlayback();
         }
     }
 
@@ -59,7 +70,14 @@ public class ConfigUI : MonoBehaviour
         GUILayout.Space(10);
 
         GUILayout.Label("Output folder:");
+        GUILayout.BeginHorizontal();
         _tempOutputFolder = GUILayout.TextField(_tempOutputFolder);
+        
+        if (GUILayout.Button("Browse", GUILayout.Width(70)))
+        {
+            BrowseFolder();
+        }
+        GUILayout.EndHorizontal();
 
         GUILayout.Space(15);
 
@@ -78,14 +96,7 @@ public class ConfigUI : MonoBehaviour
         
         if (GUILayout.Button(recBtnText, GUILayout.Height(40)))
         {
-            if (isRecording)
-            {
-                GameManager.Instance.StopRecording();
-            }
-            else
-            {
-                GameManager.Instance.StartRecording();
-            }
+            ToggleRecording();
         }
         
         // Playback Button Logic
@@ -94,18 +105,61 @@ public class ConfigUI : MonoBehaviour
         
         if (GUILayout.Button(playBtnText, GUILayout.Height(40)))
         {
-            if (isPlaying)
-            {
-                GameManager.Instance.StopPlayback();
-            }
-            else
-            {
-                GameManager.Instance.StartPlayback();
-            }
+            TogglePlayback();
         }
         
         GUILayout.EndHorizontal();
         GUI.DragWindow();
+    }
+    private void BrowseFolder()
+    {
+        StartCoroutine(BrowseFolderCoroutine());
+    }
+
+    private IEnumerator BrowseFolderCoroutine()
+    {
+        string folder=FileBrowser.PickFolder(null,null,null,"Select Output Folder");
+        if(string.IsNullOrEmpty(folder)) yield break;
+        _tempOutputFolder=folder;
+    }
+
+    private void BrowseAndStartPlayback()
+    {
+        StartCoroutine(BrowseAndStartPlaybackCoroutine());
+    }
+
+    private IEnumerator BrowseAndStartPlaybackCoroutine()
+    {
+        string file=FileBrowser.PickFile(_tempOutputFolder,"mp4 videos",["mp4"],"Select a video to play");
+        if(string.IsNullOrEmpty(file)) yield break;
+        Plugin.LogInfo(file);
+        _isWindowVisible = false;
+        GameManager.Instance.TargetVideoPath = file;
+        GameManager.Instance.StartPlayback();
+    }
+    private void ToggleRecording()
+    {
+        if (GameManager.Instance.CurrentState == AppState.Recording)
+        {
+            GameManager.Instance.StopRecording();
+        }
+        else
+        {
+            _isWindowVisible = false;
+            GameManager.Instance.StartRecording();
+        }
+    }
+
+    private void TogglePlayback()
+    {
+        if (GameManager.Instance.CurrentState == AppState.PlayingBack)
+        {
+            GameManager.Instance.StopPlayback();
+        }
+        else
+        {
+            BrowseAndStartPlayback();
+        }
     }
 
     private void RefreshTempVars()

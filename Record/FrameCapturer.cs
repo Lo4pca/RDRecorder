@@ -19,16 +19,17 @@ public class FrameCapturer : MonoBehaviour
 
     private void OnEnable()
     {
-        // Initialize a RenderTexture matching the current screen resolution
-        // ARGB32 is chosen to ensure compatibility with standard raw pixel reading
         _renderTexture = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGB32);
-        _isCapturing = true;
         _targetEncoder = FFmpegEncoder.Instance;
+        _isCapturing = false;
         
-        Plugin.LogInfo($"FrameCapturer started at resolution {Screen.width}x{Screen.height}.");
-        
-        // Start the capture loop
+        Plugin.LogInfo($"FrameCapturer initialized at resolution {Screen.width}x{Screen.height}. Waiting for level start...");
+    }
+    public void BeginCapture()
+    {
+        _isCapturing = true;
         StartCoroutine(CaptureLoop());
+        Plugin.LogInfo("FrameCapturer loop started.");
     }
 
     private void OnDisable()

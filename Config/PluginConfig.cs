@@ -10,6 +10,8 @@ public static class PluginConfig
     public static ConfigEntry<int> TargetFPS { get; private set; }
     public static ConfigEntry<string> OutputFolder { get; private set; }
     public static ConfigEntry<KeyCode> MenuHotkey { get; private set; }
+    public static ConfigEntry<KeyCode> RecordHotkey { get; private set; }
+    public static ConfigEntry<KeyCode> PlaybackHotkey { get; private set; }
 
     public static void Init(ConfigFile config)
     {
@@ -18,6 +20,20 @@ public static class PluginConfig
             "MenuHotkey", 
             KeyCode.F2, 
             "Shortcut key to open/close the configuration panel."
+        );
+
+        RecordHotkey = config.Bind(
+            "UI", 
+            "RecordHotkey", 
+            KeyCode.F3, 
+            "Shortcut key to start/stop recording."
+        );
+
+        PlaybackHotkey = config.Bind(
+            "UI", 
+            "PlaybackHotkey", 
+            KeyCode.F4, 
+            "Shortcut key to start/stop playback."
         );
 
         TargetFPS = config.Bind(

@@ -1,27 +1,22 @@
+using HarmonyLib;
 using UnityEngine;
 using RDRecorder.Core;
 using RDRecorder.Config;
+using RDLevelEditor;
+using System.Collections;
 
 namespace RDRecorder.Record;
 
 public class RecorderController : MonoBehaviour
 {
-    private FrameCapturer _capturer;
-    private int _originalCaptureFramerate;
-
+    private static FrameCapturer _capturer;
+    private static int _originalCaptureFramerate;
+    static bool _has_started; //In case there are multiple PlaySong events
+    static bool _has_ended;
     private void OnEnable()
     {
         Plugin.LogInfo("RecorderController enabled. Initializing capture pipeline...");
-
-        // 1. Hijack Unity's engine time (Animations, Physics, Update loops)
-        // Setting captureFramerate forces Time.deltaTime to strictly equal (1.0 / TargetFPS)
-        _originalCaptureFramerate = Time.captureFramerate;
-        Time.captureFramerate = PluginConfig.TargetFPS.Value;
-
-        // 2. Hijack the rhythm game's audio logic time
-        TimeMockManager.StartMocking();
-
-        // 3. Start capturing frames. Reuse an existing component instead of unconditionally
+        // Start capturing frames. Reuse an existing component instead of unconditionally
         // AddComponent-ing a new one, in case a previous session's Destroy() call (which is
         // deferred to end-of-frame) hasn't actually removed the old one yet - mirrors the
         // TryGetComponent pattern GameManager already uses for its own subsystem controllers.
@@ -43,6 +38,24 @@ public class RecorderController : MonoBehaviour
         {
             _capturer = gameObject.AddComponent<FrameCapturer>();
         }
+        _has_started=false;
+        _has_ended=false;
+    }
+    public static void BeginRecording()
+    {
+        Plugin.LogInfo("LevelEvent_PlaySong triggered. Starting time manipulation and capture loop...");
+
+        // 1. Hijack Unity's engine time
+        _originalCaptureFramerate = Time.captureFramerate;
+        Time.captureFramerate = PluginConfig.TargetFPS.Value;
+
+        // 2. Hijack the rhythm game's audio logic time
+        TimeMockManager.StartMocking();
+
+        // 3. Command the capturer to start pushing frames
+        _capturer.BeginCapture();
+        //Mute the game so that no shrill noise comes out when recording
+        AudioListener.volume = 0;
     }
 
     private void OnDisable()
@@ -71,5 +84,38 @@ public class RecorderController : MonoBehaviour
 
         // 3. Restore Unity's engine time back to realtime
         Time.captureFramerate = _originalCaptureFramerate;
+        //The game would be super noisy when the real gameplay tries to catch up with the real dspTime
+        //Hopefully 3s is enough for everything to sync
+        StartCoroutine(RestoreVolumeDelayed());
+    }
+    IEnumerator RestoreVolumeDelayed()
+    {
+        yield return new WaitForSecondsRealtime(3f);
+        AudioListener.volume = 1;
+    }
+    [HarmonyPatch(typeof(LevelEvent_PlaySong), nameof(LevelEvent_PlaySong.Run))]
+    public static class LevelEvent_PlaySong_Run_Patch
+    {
+        static void Postfix()
+        {
+            if (!_has_started&&GameManager.Instance.CurrentState==AppState.Recording)
+            {
+                BeginRecording();
+                _has_started=true;
+            }
+        }
+    }
+    [HarmonyPatch(typeof(LevelEvent_FinishLevel), nameof(LevelEvent_FinishLevel.Run))]
+    public static class LevelEvent_FinishLevel_Run_Patch
+    {
+        static bool Prefix()
+        {
+            if (!_has_ended&&GameManager.Instance.CurrentState==AppState.Recording)
+            {
+                GameManager.Instance.StopRecording();
+                _has_ended=true;
+            }
+            return true;
+        }
     }
 }
