@@ -1,5 +1,6 @@
 using UnityEngine;
 using RDRecorder.Record;
+using RDRecorder.Record.Audio;
 using RDRecorder.Playback;
 
 namespace RDRecorder.Core;
@@ -9,7 +10,8 @@ public enum AppState
 {
     Idle,
     Recording,
-    PlayingBack
+    PlayingBack,
+    AudioRecording
 }
 
 public class GameManager : MonoBehaviour
@@ -24,6 +26,7 @@ public class GameManager : MonoBehaviour
     // References to our subsystem controllers
     private RecorderController _recorderController;
     private PlaybackController _playbackController;
+    private AudioRecorderController _audioRecorderController;
 
     private void Awake()
     {
@@ -113,6 +116,36 @@ public class GameManager : MonoBehaviour
 
         _playbackController?.enabled = false;
 
+        CurrentState = AppState.Idle;
+    }
+    public void StartAudioRecording()
+    {
+        if (CurrentState != AppState.Idle)
+        {
+            Plugin.LogWarn("Cannot start audio recording unless idle.");
+            return;
+        }
+
+        Plugin.LogInfo("Starting audio recording session...");
+        CurrentState = AppState.AudioRecording;
+
+        if (!gameObject.TryGetComponent<AudioRecorderController>(out var existing))
+        {
+            _audioRecorderController = gameObject.AddComponent<AudioRecorderController>();
+        }
+        else
+        {
+            _audioRecorderController = existing;
+        }
+        _audioRecorderController.enabled = true;
+    }
+
+    public void StopAudioRecording()
+    {
+        if (CurrentState != AppState.AudioRecording) return;
+
+        Plugin.LogInfo("Stopping audio recording session...");
+        _audioRecorderController?.enabled = false;
         CurrentState = AppState.Idle;
     }
 }

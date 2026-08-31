@@ -12,6 +12,7 @@ public static class PluginConfig
     public static ConfigEntry<KeyCode> MenuHotkey { get; private set; }
     public static ConfigEntry<KeyCode> RecordHotkey { get; private set; }
     public static ConfigEntry<KeyCode> PlaybackHotkey { get; private set; }
+    public static ConfigEntry<KeyCode> AudioRecordHotkey { get; private set; }
 
     public static void Init(ConfigFile config)
     {
@@ -34,6 +35,13 @@ public static class PluginConfig
             "PlaybackHotkey", 
             KeyCode.F4, 
             "Shortcut key to start/stop playback."
+        );
+
+        AudioRecordHotkey = config.Bind(
+            "UI", 
+            "AudioRecordHotkey", 
+            KeyCode.F5, 
+            "Shortcut key to start/stop recording audio."
         );
 
         TargetFPS = config.Bind(

@@ -37,6 +37,11 @@ public class ConfigUI : MonoBehaviour
         {
             TogglePlayback();
         }
+
+        if (Input.GetKeyDown(PluginConfig.AudioRecordHotkey.Value))
+        {
+            ToggleAudioRecording();
+        }
     }
 
     private void OnGUI()
@@ -97,6 +102,13 @@ public class ConfigUI : MonoBehaviour
         if (GUILayout.Button(recBtnText, GUILayout.Height(40)))
         {
             ToggleRecording();
+        }
+
+        bool isAudioRecording = GameManager.Instance.CurrentState == AppState.AudioRecording;
+        string audioBtnText = isAudioRecording ? "Stop Audio" : "Record Audio";
+        if (GUILayout.Button(audioBtnText, GUILayout.Height(40)))
+        {
+            ToggleAudioRecording();
         }
         
         // Playback Button Logic
@@ -159,6 +171,17 @@ public class ConfigUI : MonoBehaviour
         else
         {
             BrowseAndStartPlayback();
+        }
+    }
+    private void ToggleAudioRecording()
+    {
+        if (GameManager.Instance.CurrentState == AppState.AudioRecording)
+        {
+            GameManager.Instance.StopAudioRecording();
+        }
+        else
+        {
+            GameManager.Instance.StartAudioRecording();
         }
     }
 

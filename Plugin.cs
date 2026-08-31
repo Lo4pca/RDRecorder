@@ -37,6 +37,7 @@ public class Plugin : BaseUnityPlugin
         DontDestroyOnLoad(coreObj);
         coreObj.AddComponent<ConfigUI>();
         coreObj.AddComponent<GameManager>();
+        coreObj.AddComponent<EventFilter>();
 
         Harmony harmony = new(MyPluginInfo.PLUGIN_GUID);
         harmony.PatchAll();

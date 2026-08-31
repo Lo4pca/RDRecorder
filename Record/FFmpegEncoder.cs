@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO;
 using System.Threading;
 using UnityEngine;
 using RDRecorder.Config;
-using RDLevelEditor;
+using RDRecorder.Tools;
 
 namespace RDRecorder.Record;
 
@@ -37,16 +36,7 @@ public class FFmpegEncoder : MonoBehaviour
 
     private void OnEnable()
     {
-        string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        RDLevelSettings settings=scnGame.instance.currentLevel.data.settings;
-        if (settings.song.IsNullOrEmpty()) //Builtin levels
-        {
-            _outputPath = Path.Combine(PluginConfig.OutputFolder.Value, $"{LevelInfo.levelName}_{timestamp}.mp4");
-        }
-        else
-        {
-            _outputPath = Path.Combine(PluginConfig.OutputFolder.Value, $"{settings.song}_{settings.artist}_{settings.author}_{timestamp}.mp4");
-        }
+        _outputPath = PathInfo.GetOutputPath(false);
 
         if (!StartFFmpegProcess())
         {
