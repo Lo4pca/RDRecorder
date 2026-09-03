@@ -23,13 +23,13 @@ public class FrameCapturer : MonoBehaviour
         _targetEncoder = FFmpegEncoder.Instance;
         _isCapturing = false;
         
-        Plugin.LogInfo($"FrameCapturer initialized at resolution {Screen.width}x{Screen.height}. Waiting for level start...");
+        Plugin.LogDebug($"FrameCapturer initialized at resolution {Screen.width}x{Screen.height}. Waiting for level start...");
     }
     public void BeginCapture()
     {
         _isCapturing = true;
         StartCoroutine(CaptureLoop());
-        Plugin.LogInfo("FrameCapturer loop started.");
+        Plugin.LogDebug("FrameCapturer loop started.");
     }
 
     private void OnDisable()

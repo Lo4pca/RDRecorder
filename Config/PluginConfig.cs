@@ -14,6 +14,8 @@ public static class PluginConfig
     public static ConfigEntry<KeyCode> PlaybackHotkey { get; private set; }
     public static ConfigEntry<KeyCode> AudioRecordHotkey { get; private set; }
 
+    private static string _defaultOutputPath;
+
     public static void Init(ConfigFile config)
     {
         MenuHotkey = config.Bind(
@@ -51,29 +53,42 @@ public static class PluginConfig
             "Target FPS for recording."
         );
 
-        string defaultPath = Path.Combine(Application.dataPath, "../Recordings");
+        _defaultOutputPath = Path.Combine(Application.dataPath, "../Recordings");
         OutputFolder = config.Bind(
             "Recording", 
             "OutputFolder", 
-            defaultPath, 
+            _defaultOutputPath, 
             "Output folder to recorded videos."
         );
 
-        try
-        {
-            // Directory.CreateDirectory is already a no-op if the folder exists, so there's
-            // no need to check Directory.Exists first.
-            Directory.CreateDirectory(OutputFolder.Value);
-        }
-        catch (Exception ex)
+        if (!TryEnsureOutputFolder(out string error))
         {
             // A bad path saved in the config file (invalid characters, no write permission,
             // a drive that no longer exists, etc.) would otherwise throw here and take the
             // whole plugin down during Awake(), before Harmony even patches anything. Fall
             // back to the default folder so the plugin still loads in a working state.
-            Plugin.LogError($"Could not create output folder '{OutputFolder.Value}': {ex.Message}. Falling back to default: {defaultPath}");
-            OutputFolder.Value = defaultPath;
-            Directory.CreateDirectory(defaultPath);
+            Plugin.LogError($"Could not create output folder '{OutputFolder.Value}': {error}. Falling back to default: {_defaultOutputPath}");
+            OutputFolder.Value = _defaultOutputPath;
+            Directory.CreateDirectory(_defaultOutputPath);
+        }
+    }
+
+    // Shared by Init() (which falls back to the default path on failure) and ConfigUI's
+    // manual "Save configuration" button (which just reports the error to the user).
+    public static bool TryEnsureOutputFolder(out string error)
+    {
+        try
+        {
+            // Directory.CreateDirectory is already a no-op if the folder exists, so
+            // there's no need to check Directory.Exists first.
+            Directory.CreateDirectory(OutputFolder.Value);
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
         }
     }
 }

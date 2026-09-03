@@ -1,10 +1,13 @@
 using System.Collections.Generic;
 using RDLevelEditor;
 using UnityEngine;
-public class EventFilter:MonoBehaviour
+
+namespace RDRecorder.Tools;
+
+public class EventFilter : MonoBehaviour
 {
     public static EventFilter Instance { get; private set; }
-    bool isFilteredActive=false;
+    bool isFilteredActive = false;
     List<LevelEvent_Base>[] originalEventsBackup;
     private void Awake()
     {

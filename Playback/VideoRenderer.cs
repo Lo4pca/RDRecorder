@@ -11,27 +11,44 @@ namespace RDRecorder.Playback;
 
 public class VideoRenderer : MonoBehaviour
 {
-    private static GameObject _videoRoot;
-    private static VideoPlayer _videoPlayer;
-    private static RenderTexture _videoTexture;
-    private static bool _playback_mode=false;
-    private static bool _has_started;
+    public static VideoRenderer Instance { get; private set; }
+
+    private GameObject _videoRoot;
+    private VideoPlayer _videoPlayer;
+    private RenderTexture _videoTexture;
+    private bool _playbackMode;
+    private bool _hasStarted;
 
     // Editor-specific tracking fields to restore original state on disable
-    private static RawImage _targetGameViewRawImage;
-    private static Texture _originalGameViewTexture;
+    private RawImage _targetGameViewRawImage;
+    private Texture _originalGameViewTexture;
 
     // Lets callers (PlaybackController) distinguish "enabled and actually playing" from a
-    // silent no-op enable (no recorded video found, or the editor gameView is missing).
-    public static bool IsActive => _playback_mode;
+    // silent no-op enable (invalid video path, no active level, or the editor gameView is
+    // missing).
+    public bool IsActive => _playbackMode;
+
+    private void Awake()
+    {
+        Instance = this;
+    }
 
     private void OnEnable()
     {
-        Plugin.LogInfo("VideoRenderer enabled. Initializing video playback...");
-        string video=GameManager.Instance.TargetVideoPath;
+        Plugin.LogDebug("VideoRenderer enabled. Initializing video playback...");
+        string video = GameManager.Instance.TargetVideoPath;
         if (string.IsNullOrEmpty(video) || !File.Exists(video))
         {
             Plugin.LogError($"Invalid or missing video file path: {video}. Cannot start playback.");
+            return;
+        }
+
+        // Defensive: GameManager.StartPlayback() already checks this before ever
+        // enabling this component, but keep the check here too in case anything else
+        // ever enables VideoRenderer directly.
+        if (scnGame.instance == null || scnGame.instance.currentLevel == null)
+        {
+            Plugin.LogError("Cannot start playback: no level is currently active.");
             return;
         }
 
@@ -47,16 +64,22 @@ public class VideoRenderer : MonoBehaviour
             return;
         }
 
-        _playback_mode=true;
-        _has_started=false;
+        _playbackMode = true;
+        _hasStarted = false;
     }
 
     private void OnDisable()
     {
-        Plugin.LogInfo("VideoRenderer disabled. Cleaning up video playback...");
+        // Only clean up if we actually entered playback mode - otherwise this fires (and
+        // logs) on every failed-to-start attempt too, since OnDisable always runs when
+        // the component is disabled regardless of whether OnEnable succeeded.
+        if (!_playbackMode) return;
+
+        Plugin.LogDebug("VideoRenderer disabled. Cleaning up video playback...");
         ExitPlayback();
     }
-    private static void ExitPlayback()
+
+    private void ExitPlayback()
     {
         _videoPlayer?.Stop();
 
@@ -75,18 +98,15 @@ public class VideoRenderer : MonoBehaviour
         }
 
         // Explicitly clear cached references rather than relying on Unity's "destroyed
-        // object compares equal to null" behavior to paper over it. This keeps a stray
-        // call against these fields from silently no-op'ing on a destroyed object
-        // instead of failing loudly, and drops the cached editor texture reference
-        // between sessions instead of holding onto it indefinitely.
+        // object compares equal to null" behavior to paper over it.
         _videoRoot = null;
         _videoPlayer = null;
         _videoTexture = null;
         _targetGameViewRawImage = null;
         _originalGameViewTexture = null;
 
-        scnGame.instance.SetEnabledCameras(true);
-        _playback_mode=false;
+        scnGame.instance?.SetEnabledCameras(true);
+        _playbackMode = false;
     }
 
     private bool IsEditorScene()
@@ -166,16 +186,19 @@ public class VideoRenderer : MonoBehaviour
     [HarmonyPatch(typeof(LevelEvent_PlaySong), nameof(LevelEvent_PlaySong.Run))]
     public static class LevelEvent_PlaySong_Run_Patch
     {
-        static void Postfix()
+        static void Prefix()
         {
-            if (!_has_started&&_playback_mode)
+            if (Instance != null && Instance._playbackMode && !Instance._hasStarted)
             {
-                _videoPlayer.Play();
-                Plugin.LogInfo($"Started playing video: {_videoPlayer.url}");
+                Instance._hasStarted = true;
+                Instance._videoPlayer.Play();
+                Plugin.LogInfo($"Started playing video: {Instance._videoPlayer.url}");
             }
         }
     }
-    //Cameras are restored when exiting playback mode, we need to show the rank screen at the end of the level.
+
+    // Cameras are restored when exiting playback mode; we need to show the rank screen
+    // at the end of the level.
     [HarmonyPatch(typeof(LevelEvent_FinishLevel), nameof(LevelEvent_FinishLevel.Run))]
     public static class LevelEvent_FinishLevel_Run_Patch
     {
@@ -184,12 +207,9 @@ public class VideoRenderer : MonoBehaviour
             // Route through GameManager instead of calling ExitPlayback() directly, so a
             // level ending naturally during playback fully unwinds the whole session:
             // this disables PlaybackController -> disables VideoRenderer (still runs
-            // ExitPlayback() via its own OnDisable) -> restores PlaybackController's
-            // filtered level events -> resets GameManager's state back to Idle.
-            // Previously only the video/camera side was cleaned up here, which left the
-            // filtered (reduced) event list permanently applied to this level instance
-            // and left the UI stuck showing "Stop Playback" after the level ended.
-            if (_playback_mode) GameManager.Instance.StopPlayback();
+            // ExitPlayback() via its own OnDisable) -> restores the filtered level events
+            // -> resets GameManager's state back to Idle.
+            if (Instance != null && Instance._playbackMode) GameManager.Instance.StopPlayback();
             return true;
         }
     }

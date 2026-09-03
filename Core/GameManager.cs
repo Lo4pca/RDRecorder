@@ -1,3 +1,4 @@
+using System.IO;
 using UnityEngine;
 using RDRecorder.Record;
 using RDRecorder.Record.Audio;
@@ -21,12 +22,11 @@ public class GameManager : MonoBehaviour
 
     // Read-only state property
     public AppState CurrentState { get; private set; } = AppState.Idle;
-    public string TargetVideoPath;
 
-    // References to our subsystem controllers
-    private RecorderController _recorderController;
-    private PlaybackController _playbackController;
-    private AudioRecorderController _audioRecorderController;
+    // Set only via StartPlayback(videoPath), so there's exactly one place that can put
+    // the plugin into PlayingBack with a path, instead of relying on callers to set this
+    // field themselves right before calling StartPlayback().
+    public string TargetVideoPath { get; private set; }
 
     private void Awake()
     {
@@ -46,26 +46,22 @@ public class GameManager : MonoBehaviour
             Plugin.LogWarn("Already in recording state.");
             return;
         }
-
-        if (CurrentState == AppState.PlayingBack)
+        if (CurrentState != AppState.Idle)
         {
-            Plugin.LogWarn("Cannot start recording while playing back. Stop playback first.");
+            Plugin.LogWarn($"Cannot start recording while {CurrentState}. Stop the current session first.");
             return;
         }
 
-        Plugin.LogInfo("Starting recording session...");
+        Plugin.LogInfo("Recording armed. Capture will begin once the level starts.");
         CurrentState = AppState.Recording;
 
-        // Dynamically add the Recorder subsystem to this GameObject
-        if (!gameObject.TryGetComponent<RecorderController>(out var existing))
+        // Dynamically add the Recorder subsystem to this GameObject if it isn't already
+        // attached (its own Awake() sets RecorderController.Instance).
+        if (!gameObject.TryGetComponent<RecorderController>(out _))
         {
-            _recorderController = gameObject.AddComponent<RecorderController>();
+            gameObject.AddComponent<RecorderController>();
         }
-        else
-        {
-            _recorderController = existing;
-        }
-        _recorderController.enabled = true;
+        RecorderController.Instance.enabled = true;
     }
 
     public void StopRecording()
@@ -73,39 +69,48 @@ public class GameManager : MonoBehaviour
         if (CurrentState != AppState.Recording) return;
 
         Plugin.LogInfo("Stopping recording session...");
-        
-        _recorderController?.enabled = false;
+
+        RecorderController.Instance?.enabled = false;
 
         CurrentState = AppState.Idle;
     }
 
-    public void StartPlayback()
+    public void StartPlayback(string videoPath)
     {
         if (CurrentState == AppState.PlayingBack)
         {
             Plugin.LogWarn("Already in playback state.");
             return;
         }
-
-        if (CurrentState == AppState.Recording)
+        if (CurrentState != AppState.Idle)
         {
-            Plugin.LogWarn("Cannot start playback while recording. Stop recording first.");
+            Plugin.LogWarn($"Cannot start playback while {CurrentState}. Stop the current session first.");
+            return;
+        }
+        if (string.IsNullOrEmpty(videoPath) || !File.Exists(videoPath))
+        {
+            Plugin.LogError($"Cannot start playback: '{videoPath}' does not exist.");
+            return;
+        }
+        // Playback (unlike recording) starts immediately rather than waiting for a level
+        // event, so unlike RecorderController it can't defer this check - it needs a
+        // level to already be active.
+        if (scnGame.instance == null || scnGame.instance.currentLevel == null)
+        {
+            Plugin.LogError("Cannot start playback: no level is currently active. Start playback while in a level.");
             return;
         }
 
-        Plugin.LogInfo("Starting pre-rendered playback...");
+        Plugin.LogInfo("Playback started.");
+        TargetVideoPath = videoPath;
         CurrentState = AppState.PlayingBack;
 
         // Dynamically add the Playback subsystem to this GameObject
-        if (!gameObject.TryGetComponent<PlaybackController>(out var existing))
+        if (!gameObject.TryGetComponent<PlaybackController>(out _))
         {
-            _playbackController = gameObject.AddComponent<PlaybackController>();
+            gameObject.AddComponent<PlaybackController>();
         }
-        else
-        {
-            _playbackController = existing;
-        }
-        _playbackController.enabled = true;
+        PlaybackController.Instance.enabled = true;
     }
 
     public void StopPlayback()
@@ -114,30 +119,32 @@ public class GameManager : MonoBehaviour
 
         Plugin.LogInfo("Stopping playback and restoring original game state...");
 
-        _playbackController?.enabled = false;
+        PlaybackController.Instance?.enabled = false;
 
         CurrentState = AppState.Idle;
     }
+
     public void StartAudioRecording()
     {
+        if (CurrentState == AppState.AudioRecording)
+        {
+            Plugin.LogWarn("Already in audio recording state.");
+            return;
+        }
         if (CurrentState != AppState.Idle)
         {
-            Plugin.LogWarn("Cannot start audio recording unless idle.");
+            Plugin.LogWarn($"Cannot start audio recording while {CurrentState}. Stop the current session first.");
             return;
         }
 
-        Plugin.LogInfo("Starting audio recording session...");
+        Plugin.LogInfo("Audio recording armed. Capture will begin once the level starts.");
         CurrentState = AppState.AudioRecording;
 
-        if (!gameObject.TryGetComponent<AudioRecorderController>(out var existing))
+        if (!gameObject.TryGetComponent<AudioRecorderController>(out _))
         {
-            _audioRecorderController = gameObject.AddComponent<AudioRecorderController>();
+            gameObject.AddComponent<AudioRecorderController>();
         }
-        else
-        {
-            _audioRecorderController = existing;
-        }
-        _audioRecorderController.enabled = true;
+        AudioRecorderController.Instance.enabled = true;
     }
 
     public void StopAudioRecording()
@@ -145,7 +152,7 @@ public class GameManager : MonoBehaviour
         if (CurrentState != AppState.AudioRecording) return;
 
         Plugin.LogInfo("Stopping audio recording session...");
-        _audioRecorderController?.enabled = false;
+        AudioRecorderController.Instance?.enabled = false;
         CurrentState = AppState.Idle;
     }
 }

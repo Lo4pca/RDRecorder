@@ -8,21 +8,44 @@ namespace RDRecorder.Tools;
 public static class PathInfo
 {
     public static string levelName;
+
     public static string GetOutputPath(bool isAudio)
     {
-        string outputPath;
         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        RDLevelSettings settings=scnGame.instance.currentLevel.data.settings;
-        string suffix=isAudio?"m4a":"mp4";
-        if (settings.song.IsNullOrEmpty()) //Builtin levels
+        string suffix = isAudio ? "m4a" : "mp4";
+        string baseName = "Recording";
+
+        // Defensive: this should only happen if GetOutputPath is ever called outside an
+        // active level. Neither current caller does this - both encoders only call this
+        // once a level's PlaySong event has already fired - but a generic fallback name
+        // is safer than an unhandled NullReferenceException here.
+        if (scnGame.instance != null && scnGame.instance.currentLevel != null)
         {
-            outputPath = Path.Combine(PluginConfig.OutputFolder.Value, $"{levelName}_{timestamp}.{suffix}");
+            RDLevelSettings settings = scnGame.instance.currentLevel.data.settings;
+            baseName = settings.song.IsNullOrEmpty()
+                ? (levelName ?? "Recording") // Builtin levels
+                : $"{settings.song}_{settings.artist}_{settings.author}";
         }
         else
         {
-            outputPath = Path.Combine(PluginConfig.OutputFolder.Value, $"{settings.song}_{settings.artist}_{settings.author}_{timestamp}.{suffix}");
+            Plugin.LogWarn("GetOutputPath called with no active level; using a generic filename.");
         }
-        return outputPath;
+
+        string fileName = $"{SanitizeFileNameComponent(baseName)}_{timestamp}.{suffix}";
+        return Path.Combine(PluginConfig.OutputFolder.Value, fileName);
+    }
+
+    // Song/artist/author metadata is free text and can contain characters that aren't
+    // legal in filenames (e.g. a colon in a song title), which would otherwise make
+    // ffmpeg fail to open the output path.
+    private static string SanitizeFileNameComponent(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+        foreach (char c in Path.GetInvalidFileNameChars())
+        {
+            input = input.Replace(c, '_');
+        }
+        return input;
     }
 }
 [HarmonyPatch(typeof(HeartMonitor), nameof(HeartMonitor.Show))]

@@ -9,17 +9,26 @@ namespace RDRecorder.Record;
 
 public class RecorderController : MonoBehaviour
 {
-    private static FrameCapturer _capturer;
-    private static int _originalCaptureFramerate;
-    static bool _has_started; //In case there are multiple PlaySong events
-    static bool _has_ended;
+    public static RecorderController Instance { get; private set; }
+
+    private FrameCapturer _capturer;
+    private int _originalCaptureFramerate;
+    private bool _hasStarted; // In case there are multiple PlaySong events
+    private bool _hasEnded;
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
     private void OnEnable()
     {
-        Plugin.LogInfo("RecorderController enabled. Initializing capture pipeline...");
-        // Start capturing frames. Reuse an existing component instead of unconditionally
-        // AddComponent-ing a new one, in case a previous session's Destroy() call (which is
-        // deferred to end-of-frame) hasn't actually removed the old one yet - mirrors the
-        // TryGetComponent pattern GameManager already uses for its own subsystem controllers.
+        Plugin.LogDebug("RecorderController armed. Waiting for level start...");
+
+        // Reuse an existing component instead of unconditionally AddComponent-ing a new
+        // one, in case a previous session's Destroy() call (deferred to end-of-frame)
+        // hasn't actually removed the old one yet - mirrors the TryGetComponent pattern
+        // GameManager uses for its own subsystem controllers.
         if (gameObject.TryGetComponent<FFmpegEncoder>(out var existingEncoder))
         {
             existingEncoder.enabled = true;
@@ -38,12 +47,25 @@ public class RecorderController : MonoBehaviour
         {
             _capturer = gameObject.AddComponent<FrameCapturer>();
         }
-        _has_started=false;
-        _has_ended=false;
+
+        _hasStarted = false;
+        _hasEnded = false;
     }
-    public static void BeginRecording()
+
+    // Called once the level's PlaySong event actually fires, so PathInfo.GetOutputPath
+    // and the encoder can safely assume a level is loaded. Deliberately NOT done in
+    // OnEnable(): arming can happen before any level is loaded (e.g. from a menu), and
+    // PathInfo.GetOutputPath reads the current level's metadata.
+    private void BeginRecording()
     {
-        Plugin.LogInfo("LevelEvent_PlaySong triggered. Starting time manipulation and capture loop...");
+        if (!FFmpegEncoder.Instance.BeginEncoding())
+        {
+            Plugin.LogWarn("Recording could not start because the encoder failed to initialize.");
+            GameManager.Instance.StopRecording();
+            return;
+        }
+
+        Plugin.LogInfo("Recording started.");
 
         // 1. Hijack Unity's engine time
         _originalCaptureFramerate = Time.captureFramerate;
@@ -54,13 +76,14 @@ public class RecorderController : MonoBehaviour
 
         // 3. Command the capturer to start pushing frames
         _capturer.BeginCapture();
-        //Mute the game so that no shrill noise comes out when recording
+
+        // Mute the game so that no shrill noise comes out when recording
         AudioListener.volume = 0;
     }
 
     private void OnDisable()
     {
-        Plugin.LogInfo("RecorderController disabled. Restoring original time flow...");
+        Plugin.LogDebug("RecorderController disabled. Restoring original time flow...");
 
         // 1. Stop capturing. Destroy() only marks a component for removal at the end of
         // the current frame - its OnDisable doesn't run synchronously. Explicitly setting
@@ -84,36 +107,40 @@ public class RecorderController : MonoBehaviour
 
         // 3. Restore Unity's engine time back to realtime
         Time.captureFramerate = _originalCaptureFramerate;
-        //The game would be super noisy when the real gameplay tries to catch up with the real dspTime
-        //Hopefully 3s is enough for everything to sync
+
+        // The game would be super noisy when the real gameplay tries to catch up with
+        // the real dspTime. Hopefully 3s is enough for everything to sync.
         StartCoroutine(RestoreVolumeDelayed());
     }
-    IEnumerator RestoreVolumeDelayed()
+
+    private IEnumerator RestoreVolumeDelayed()
     {
         yield return new WaitForSecondsRealtime(3f);
         AudioListener.volume = 1;
     }
+
     [HarmonyPatch(typeof(LevelEvent_PlaySong), nameof(LevelEvent_PlaySong.Run))]
     public static class LevelEvent_PlaySong_Run_Patch
     {
-        static void Postfix()
+        static void Prefix()
         {
-            if (!_has_started&&GameManager.Instance.CurrentState==AppState.Recording)
+            if (Instance != null && !Instance._hasStarted && GameManager.Instance.CurrentState == AppState.Recording)
             {
-                BeginRecording();
-                _has_started=true;
+                Instance._hasStarted = true;
+                Instance.BeginRecording();
             }
         }
     }
+
     [HarmonyPatch(typeof(LevelEvent_FinishLevel), nameof(LevelEvent_FinishLevel.Run))]
     public static class LevelEvent_FinishLevel_Run_Patch
     {
         static bool Prefix()
         {
-            if (!_has_ended&&GameManager.Instance.CurrentState==AppState.Recording)
+            if (Instance != null && !Instance._hasEnded && GameManager.Instance.CurrentState == AppState.Recording)
             {
+                Instance._hasEnded = true;
                 GameManager.Instance.StopRecording();
-                _has_ended=true;
             }
             return true;
         }
