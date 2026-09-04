@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO;
 using System.Threading;
 using UnityEngine;
 using RDRecorder.Config;
-using RDLevelEditor;
+using RDRecorder.Tools;
 
 namespace RDRecorder.Record;
 
@@ -29,30 +28,28 @@ public class FFmpegEncoder : MonoBehaviour
     private const int MaxQueuedSeconds = 5;
     private int _droppedFrameCount;
 
+    // Throttles the "queue backing up" warning so a sustained I/O slowdown doesn't spam
+    // one log line per frame (every ~16ms at 60fps).
+    private float _lastBackupWarningTime = -999f;
+
     private void Awake()
     {
         Instance = this;
         _frameQueue = new ConcurrentQueue<byte[]>();
     }
 
-    private void OnEnable()
+    // Called by RecorderController once the level's PlaySong event has actually fired,
+    // so PathInfo.GetOutputPath can safely read the current level's metadata. NOT called
+    // from OnEnable(): arming a recording can happen before any level is loaded, and
+    // PathInfo.GetOutputPath would throw if called at that point.
+    public bool BeginEncoding()
     {
-        string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        RDLevelSettings settings=scnGame.instance.currentLevel.data.settings;
-        if (settings.song.IsNullOrEmpty()) //Builtin levels
-        {
-            _outputPath = Path.Combine(PluginConfig.OutputFolder.Value, $"{LevelInfo.levelName}_{timestamp}.mp4");
-        }
-        else
-        {
-            _outputPath = Path.Combine(PluginConfig.OutputFolder.Value, $"{settings.song}_{settings.artist}_{settings.author}_{timestamp}.mp4");
-        }
+        _outputPath = PathInfo.GetOutputPath(false);
 
         if (!StartFFmpegProcess())
         {
             Plugin.LogError("Failed to start FFmpeg process. Please ensure ffmpeg.exe is in the game root folder or system PATH.");
-            enabled = false;
-            return;
+            return false;
         }
 
         _isEncoding = true;
@@ -67,11 +64,20 @@ public class FFmpegEncoder : MonoBehaviour
         _encoderThread.Start();
         
         Plugin.LogInfo($"Encoder pipeline started. Output: {_outputPath}");
+        return true;
     }
 
     private void OnDisable()
     {
-        Plugin.LogInfo("Stopping encoder pipeline. Flushing remaining frames...");
+        if (_ffmpegProcess == null && _encoderThread == null)
+        {
+            // BeginEncoding() was never called (e.g. armed but stopped before any
+            // level's PlaySong event fired) - nothing to flush or clean up.
+            if (Instance == this) Instance = null;
+            return;
+        }
+
+        Plugin.LogDebug("Stopping encoder pipeline. Flushing remaining frames...");
         
         // Signal the thread to stop accepting new frames
         _isEncoding = false; 
@@ -136,9 +142,11 @@ public class FFmpegEncoder : MonoBehaviour
 
         _frameQueue.Enqueue(frameData);
 
-        // Warn if the queue is growing too large (I/O is bottlenecking)
-        if (_frameQueue.Count > 120) 
+        // Warn if the queue is growing too large (I/O is bottlenecking), throttled to at
+        // most once per second so a sustained backup doesn't spam the log every frame.
+        if (_frameQueue.Count > 120 && Time.realtimeSinceStartup - _lastBackupWarningTime > 1f)
         {
+            _lastBackupWarningTime = Time.realtimeSinceStartup;
             Plugin.LogWarn($"Encoder queue is backing up! Current size: {_frameQueue.Count} frames.");
         }
     }

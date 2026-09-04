@@ -37,6 +37,11 @@ public class ConfigUI : MonoBehaviour
         {
             TogglePlayback();
         }
+
+        if (Input.GetKeyDown(PluginConfig.AudioRecordHotkey.Value))
+        {
+            ToggleAudioRecording();
+        }
     }
 
     private void OnGUI()
@@ -53,7 +58,8 @@ public class ConfigUI : MonoBehaviour
         // duration of a recording session, and playback re-encodes nothing but still
         // reads TargetFPS for its own bookkeeping. Changing FPS mid-session would desync
         // audio/video, so the field is locked whenever we're not Idle.
-        bool isIdle = GameManager.Instance.CurrentState == AppState.Idle;
+        AppState state = GameManager.Instance.CurrentState;
+        bool isIdle = state == AppState.Idle;
 
         GUILayout.BeginHorizontal();
         GUILayout.Label("Target FPS:", GUILayout.Width(80));
@@ -90,23 +96,37 @@ public class ConfigUI : MonoBehaviour
         
         GUILayout.BeginHorizontal();
         
-        // Recording Button Logic
-        bool isRecording = GameManager.Instance.CurrentState == AppState.Recording;
+        // Each button is only enabled if we're Idle (free to start this action) or
+        // already doing this specific action (so it can be stopped). Any other non-idle
+        // state would just be rejected by GameManager anyway - disabling here makes that
+        // visible instead of relying on the user to notice a log warning.
+        bool isRecording = state == AppState.Recording;
         string recBtnText = isRecording ? "Stop Recording" : "Start Recording";
-        
+        GUI.enabled = isIdle || isRecording;
         if (GUILayout.Button(recBtnText, GUILayout.Height(40)))
         {
             ToggleRecording();
         }
+        GUI.enabled = true;
+
+        bool isAudioRecording = state == AppState.AudioRecording;
+        string audioBtnText = isAudioRecording ? "Stop Audio" : "Record Audio";
+        GUI.enabled = isIdle || isAudioRecording;
+        if (GUILayout.Button(audioBtnText, GUILayout.Height(40)))
+        {
+            ToggleAudioRecording();
+        }
+        GUI.enabled = true;
         
         // Playback Button Logic
-        bool isPlaying = GameManager.Instance.CurrentState == AppState.PlayingBack;
+        bool isPlaying = state == AppState.PlayingBack;
         string playBtnText = isPlaying ? "Stop Playback" : "Play Recordings";
-        
+        GUI.enabled = isIdle || isPlaying;
         if (GUILayout.Button(playBtnText, GUILayout.Height(40)))
         {
             TogglePlayback();
         }
+        GUI.enabled = true;
         
         GUILayout.EndHorizontal();
         GUI.DragWindow();
@@ -132,10 +152,9 @@ public class ConfigUI : MonoBehaviour
     {
         string file=FileBrowser.PickFile(_tempOutputFolder,"mp4 videos",["mp4"],"Select a video to play");
         if(string.IsNullOrEmpty(file)) yield break;
-        Plugin.LogInfo(file);
+        Plugin.LogDebug($"Selected video for playback: {file}");
         _isWindowVisible = false;
-        GameManager.Instance.TargetVideoPath = file;
-        GameManager.Instance.StartPlayback();
+        GameManager.Instance.StartPlayback(file);
     }
     private void ToggleRecording()
     {
@@ -159,6 +178,17 @@ public class ConfigUI : MonoBehaviour
         else
         {
             BrowseAndStartPlayback();
+        }
+    }
+    private void ToggleAudioRecording()
+    {
+        if (GameManager.Instance.CurrentState == AppState.AudioRecording)
+        {
+            GameManager.Instance.StopAudioRecording();
+        }
+        else
+        {
+            GameManager.Instance.StartAudioRecording();
         }
     }
 
@@ -194,17 +224,9 @@ public class ConfigUI : MonoBehaviour
 
         PluginConfig.OutputFolder.Value = _tempOutputFolder;
 
-        try
+        if (!PluginConfig.TryEnsureOutputFolder(out string error))
         {
-            if (!System.IO.Directory.Exists(PluginConfig.OutputFolder.Value))
-            {
-                System.IO.Directory.CreateDirectory(PluginConfig.OutputFolder.Value);
-                Plugin.LogInfo($"Folder created: {PluginConfig.OutputFolder.Value}");
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Plugin.LogError($"Unable to create folder: {ex.Message}");
+            Plugin.LogError($"Unable to create folder: {error}");
         }
 
         Plugin.LogInfo("Configuration saved.");

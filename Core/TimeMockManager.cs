@@ -18,7 +18,7 @@ public static class TimeMockManager
         _mockDspTime = AudioSettings.dspTime;
         _isMocking = true;
         
-        Plugin.LogInfo($"Time mocking started. Base dspTime initialized at: {_mockDspTime}");
+        Plugin.LogDebug($"Time mocking started. Base dspTime initialized at: {_mockDspTime}");
     }
 
     // Called by RecorderController when recording stops
@@ -27,7 +27,7 @@ public static class TimeMockManager
         if (!_isMocking) return;
         
         _isMocking = false;
-        Plugin.LogInfo("Time mocking stopped. Restoring original dspTime flow.");
+        Plugin.LogDebug("Time mocking stopped. Restoring original dspTime flow.");
     }
 
     // Called by RecorderController after a frame has been successfully pushed to the encoder pipeline
